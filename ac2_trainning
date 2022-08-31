@@ -1,0 +1,96 @@
+# Gym stuff
+import gym
+import gym_anytrading
+
+# Stable baselines - rl stuff
+from stable_baselines.common.vec_env import DummyVecEnv
+from stable_baselines import A2C
+
+
+
+# Processing libraries
+import os
+import sys
+import requests
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
+import talib as ta
+import datetime
+import pyodbc
+import time
+from joblib import dump, load
+import os 
+
+
+df = pd.read_sql(query, cnxn)
+df.columns = ['Open', 'High', 'Low', 'Close', 'Volume','Date']
+df['hourtime'] = pd.to_datetime(df['Date']).dt.strftime('%H%M')
+df = df.set_index('Date')
+
+
+
+df["Close"] = pd.to_numeric(df["Close"])
+df['RSI'] = ta.RSI(df['Close'], timeperiod=14)
+df['sma'] = ta.SMA(df['Close'],timeperiod=14)
+# need figuar out timeperiod 7 or 14
+df['fastk'], df['fastd'] = ta.STOCHRSI(df['Close'],
+                                                       timeperiod=14, fastk_period=5, fastd_period=3,
+                                                       fastd_matype=0)
+
+df = df.dropna()
+
+# # Grab our X & Y Columns.
+
+X_Cols = df[['Open', 'High', 'Low', 'Close', 'Volume','hourtime', 'RSI', 'fastk', 'fastd']]
+
+df=X_Cols
+
+df=df[['Open', 'High', 'Low', 'Close', 'Volume','hourtime', 'RSI', 'fastk', 'fastd']]
+
+
+
+window_size = 12
+start_index = window_size
+end_index = len(df)
+
+
+from gym_anytrading.envs import StocksEnv
+
+def add_signals(env):
+    start = env.frame_bound[0] - env.window_size
+    end = env.frame_bound[1]
+    prices = env.df.loc[:, 'Close'].to_numpy()[start:end]
+    signal_features = env.df.loc[:,['Open', 'High', 'Low', 'Close', 'Volume','hourtime', 'RSI', 'fastk', 'fastd']].to_numpy()[start:end]
+
+    return prices, signal_features
+
+class MyCustomEnv(StocksEnv):
+    _process_data = add_signals
+
+
+env = MyCustomEnv(df=df, window_size=window_size,  frame_bound=(start_index,end_index))
+
+
+env_maker = lambda: env
+env = DummyVecEnv([env_maker])
+
+
+model = A2C('MlpLstmPolicy', env, verbose=1)
+model.learn(total_timesteps=100000)
+model.save(r"C:\Users\willi\PycharmProjects\rf\new_robot_2022\signal_hourtime220828")
+
+
+env = MyCustomEnv(df=df, window_size=12, frame_bound=(12,9000))
+obs = env.reset()
+while True: 
+    obs = obs[np.newaxis, ...]
+    action, _states = model.predict(obs)
+    obs, rewards, done, info = env.step(action)
+    if done:
+        print("info", info)
+        break
+        
+        
+del model # remove to demonstrate saving and loading
+model = A2C.load(r"C:\Users\willi\PycharmProjects\rf\new_robot_2022\signal_hourtime220828")
